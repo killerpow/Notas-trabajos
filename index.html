@@ -67,51 +67,68 @@
                 concept: '', amount: '', date: new Date().toISOString().split('T')[0]
             });
 
-            // Persistencia de datos
+            // Carga inicial
             useEffect(() => {
                 try {
-                    const savedTasks = localStorage.getItem('call_tasks_v9');
-                    const savedExpenses = localStorage.getItem('call_expenses_v9');
+                    const savedTasks = localStorage.getItem('call_tasks_v10');
+                    const savedExpenses = localStorage.getItem('call_expenses_v10');
                     if (savedTasks) setTasks(JSON.parse(savedTasks));
                     if (savedExpenses) setExpenses(JSON.parse(savedExpenses));
                 } catch (e) { console.error("Error cargando datos", e); }
             }, []);
 
+            // Guardado automático
             useEffect(() => {
-                localStorage.setItem('call_tasks_v9', JSON.stringify(tasks));
-                localStorage.setItem('call_expenses_v9', JSON.stringify(expenses));
+                localStorage.setItem('call_tasks_v10', JSON.stringify(tasks));
+                localStorage.setItem('call_expenses_v10', JSON.stringify(expenses));
                 if (window.lucide) window.lucide.createIcons();
             }, [tasks, expenses, view]);
 
-            // Función WhatsApp Cliente con el mensaje personalizado
+            // WhatsApp: Aviso Individual
             const sendClientNotice = (task) => {
                 const cleanPhone = task.phone.replace(/\D/g, '');
-                // Mensaje solicitado por el usuario
                 const message = "Hola. Vamos a acercarnos en un rato para hacer el trabajo y queríamos saber si estáis en casa y os va bien. Un saludo.";
                 window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
             };
 
-            // Copias de Seguridad
+            // WhatsApp: Enviar Listado de Trabajos (Texto legible)
+            const sendTaskListWhatsApp = () => {
+                if (tasks.length === 0) {
+                    alert("No hay trabajos para enviar.");
+                    return;
+                }
+                let message = "*LISTADO DE TRABAJOS*\n\n";
+                tasks.forEach((t, i) => {
+                    message += `${i + 1}. *${t.clientName}* (${t.status.toUpperCase()})\n`;
+                    message += `   📍 ${t.address}\n`;
+                    message += `   🛠️ ${t.jobType}\n`;
+                    message += `   📞 ${t.phone}\n`;
+                    message += `   💰 Total: ${t.totalAmount}€ | Pagado: ${t.paidAmount}€\n\n`;
+                });
+                window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+            };
+
+            // Backup técnico (JSON)
             const exportToJSON = () => {
                 const dataStr = JSON.stringify({ tasks, expenses }, null, 2);
                 const blob = new Blob([dataStr], { type: "application/json" });
                 const url = URL.createObjectURL(blob);
                 const link = document.createElement('a');
                 link.href = url;
-                link.download = `backup_${new Date().toISOString().slice(0,10)}.json`;
+                link.download = `backup_completo_${new Date().toISOString().slice(0,10)}.json`;
                 link.click();
             };
 
             const sendBackupWhatsApp = () => {
-                const msg = "*BACKUP GESTOR PRO*\n\n" + JSON.stringify({ tasks, expenses });
+                const msg = "*BACKUP GESTOR PRO (CÓDIGO)*\n\n" + JSON.stringify({ tasks, expenses });
                 window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
             };
 
             const processImportedData = (dataString) => {
                 try {
                     let cleanString = dataString.trim();
-                    if (cleanString.includes("*BACKUP GESTOR PRO*")) {
-                        cleanString = cleanString.split("*BACKUP GESTOR PRO*")[1].trim();
+                    if (cleanString.includes("*BACKUP GESTOR PRO (CÓDIGO)*")) {
+                        cleanString = cleanString.split("*BACKUP GESTOR PRO (CÓDIGO)*")[1].trim();
                     }
                     const parsed = JSON.parse(cleanString);
                     if (confirm("¿Restaurar todos los datos? Se borrará lo actual.")) {
@@ -120,7 +137,7 @@
                         setImportText('');
                         alert("Datos restaurados correctamente.");
                     }
-                } catch (err) { alert("Error: El texto no es válido."); }
+                } catch (err) { alert("Error: El texto no es un código de backup válido."); }
             };
 
             const handleFileUpload = (e) => {
@@ -131,24 +148,20 @@
                 reader.readAsText(file);
             };
 
-            // Gestión de Trabajos
+            // CRUD Trabajos
             const handleSubmit = (e) => {
                 e.preventDefault();
+                const numTotal = parseFloat(formData.totalAmount) || 0;
+                const numPaid = parseFloat(formData.paidAmount) || 0;
+
                 if (editingTaskId) {
                     setTasks(tasks.map(t => t.id === editingTaskId ? {
-                        ...t,
-                        ...formData,
-                        totalAmount: parseFloat(formData.totalAmount) || 0,
-                        paidAmount: parseFloat(formData.paidAmount) || 0
+                        ...t, ...formData, totalAmount: numTotal, paidAmount: numPaid
                     } : t));
                 } else {
                     const newTask = {
-                        ...formData,
-                        id: Date.now(),
-                        status: 'pending',
-                        createdAt: new Date().toLocaleDateString(),
-                        totalAmount: parseFloat(formData.totalAmount) || 0,
-                        paidAmount: parseFloat(formData.paidAmount) || 0
+                        ...formData, id: Date.now(), status: 'pending', createdAt: new Date().toLocaleDateString(),
+                        totalAmount: numTotal, paidAmount: numPaid
                     };
                     setTasks([newTask, ...tasks]);
                 }
@@ -176,7 +189,7 @@
             };
 
             const changeStatus = (id, newStatus) => setTasks(tasks.map(t => t.id === id ? {...t, status: newStatus} : t));
-            const deleteTask = (id) => { if (confirm('¿Eliminar?')) setTasks(tasks.filter(t => t.id !== id)); };
+            const deleteTask = (id) => { if (confirm('¿Eliminar definitivamente?')) setTasks(tasks.filter(t => t.id !== id)); };
 
             // Cálculos
             const totalIngresos = tasks.reduce((acc, t) => acc + (parseFloat(t.paidAmount) || 0), 0);
@@ -191,10 +204,10 @@
                                 <Icon name="hammer" /> GESTOR PRO
                             </h1>
                             <div className="flex gap-2">
-                                <button onClick={() => setShowExpenseForm(true)} className="bg-red-500/20 border border-red-400/30 p-3 rounded-2xl active:scale-90 transition-transform" title="Anotar Gasto">
+                                <button onClick={() => setShowExpenseForm(true)} className="bg-red-500/20 border border-red-400/30 p-3 rounded-2xl active:scale-90 transition-transform">
                                     <Icon name="trending-down" size={18} />
                                 </button>
-                                <button onClick={() => { setEditingTaskId(null); setFormData({clientName: '', phone: '', address: '', jobType: '', notes: '', totalAmount: '', paidAmount: ''}); setShowForm(true); }} className="bg-green-500 p-3 rounded-2xl shadow-md active:scale-90 transition-transform" title="Nuevo Trabajo">
+                                <button onClick={() => { setEditingTaskId(null); setFormData({clientName: '', phone: '', address: '', jobType: '', notes: '', totalAmount: '', paidAmount: ''}); setShowForm(true); }} className="bg-green-500 p-3 rounded-2xl shadow-md active:scale-90 transition-transform">
                                     <Icon name="plus" size={24} />
                                 </button>
                             </div>
@@ -220,15 +233,16 @@
                     </nav>
 
                     <main className="flex-1 p-4 max-w-xl mx-auto w-full space-y-4">
+                        {/* BALANCE */}
                         {view === 'balance' && (
                             <div className="space-y-4 animate-in fade-in">
                                 <div className="grid grid-cols-2 gap-3">
                                     <div className="bg-white p-6 rounded-[32px] border shadow-sm text-center">
-                                        <p className="text-[10px] font-bold uppercase text-slate-400 mb-1">Total Ingresos</p>
+                                        <p className="text-[10px] font-bold uppercase text-slate-400 mb-1 tracking-widest">Ingresos</p>
                                         <h2 className="text-2xl font-black text-green-600">{totalIngresos.toFixed(2)}€</h2>
                                     </div>
                                     <div className="bg-white p-6 rounded-[32px] border shadow-sm text-center">
-                                        <p className="text-[10px] font-bold uppercase text-slate-400 mb-1">Total Gastos</p>
+                                        <p className="text-[10px] font-bold uppercase text-slate-400 mb-1 tracking-widest">Gastos</p>
                                         <h2 className="text-2xl font-black text-red-500">{totalGastos.toFixed(2)}€</h2>
                                     </div>
                                 </div>
@@ -242,17 +256,23 @@
                             </div>
                         )}
 
+                        {/* COPIAS Y WHATSAPP */}
                         {view === 'backups' && (
                             <div className="space-y-6 animate-in fade-in">
                                 <div className="bg-white p-6 rounded-[32px] border shadow-sm space-y-4">
-                                    <h3 className="font-black text-lg px-2 uppercase">Guardar Datos</h3>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <button onClick={exportToJSON} className="bg-blue-600 text-white p-5 rounded-3xl flex flex-col items-center gap-2 font-black text-[10px] shadow-lg active:scale-95">
-                                            <Icon name="download" /> DESCARGAR JSON
+                                    <h3 className="font-black text-lg px-2 uppercase">Exportar y Enviar</h3>
+                                    <div className="grid grid-cols-1 gap-3">
+                                        <button onClick={sendTaskListWhatsApp} className="bg-green-600 text-white p-5 rounded-3xl flex items-center justify-center gap-3 font-black text-xs shadow-lg active:scale-95">
+                                            <Icon name="message-square" /> ENVIAR LISTADO TRABAJOS (WhatsApp)
                                         </button>
-                                        <button onClick={sendBackupWhatsApp} className="bg-green-600 text-white p-5 rounded-3xl flex flex-col items-center gap-2 font-black text-[10px] shadow-lg active:scale-95">
-                                            <Icon name="share-2" /> ENVIAR WHATSAPP
-                                        </button>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <button onClick={exportToJSON} className="bg-blue-600 text-white p-5 rounded-3xl flex flex-col items-center gap-2 font-black text-[10px] shadow-lg active:scale-95">
+                                                <Icon name="download" /> DESCARGAR JSON
+                                            </button>
+                                            <button onClick={sendBackupWhatsApp} className="bg-slate-800 text-white p-5 rounded-3xl flex flex-col items-center gap-2 font-black text-[10px] shadow-lg active:scale-95">
+                                                <Icon name="shield-check" /> BACKUP CÓDIGO
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -260,17 +280,17 @@
                                     <h3 className="font-black text-lg px-2 uppercase">Restaurar Datos</h3>
                                     <div onClick={() => fileInputRef.current.click()} className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[24px] p-6 flex flex-col items-center gap-2 cursor-pointer active:bg-blue-50 transition-colors">
                                         <Icon name="file-up" size={24} className="text-blue-500" />
-                                        <p className="font-bold text-slate-700 text-xs uppercase">Elegir Archivo Backup</p>
+                                        <p className="font-bold text-slate-700 text-xs uppercase">Elegir Archivo</p>
                                         <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".json,.txt" />
                                     </div>
 
                                     <div className="gradient-restore p-5 space-y-3">
                                         <div className="flex items-center gap-2 text-blue-600">
                                             <Icon name="clipboard-paste" size={16} />
-                                            <p className="text-[10px] font-black uppercase">Pegar Texto de Backup</p>
+                                            <p className="text-[10px] font-black uppercase">Pegar Código de Backup</p>
                                         </div>
                                         <textarea 
-                                            placeholder="Pega aquí el código que recibiste por WhatsApp..." 
+                                            placeholder="Pega el código aquí..." 
                                             className="w-full bg-slate-50 rounded-xl p-4 text-xs h-32 outline-none resize-none border border-slate-100"
                                             value={importText}
                                             onChange={(e) => setImportText(e.target.value)}
@@ -287,15 +307,15 @@
                             </div>
                         )}
 
+                        {/* LISTAS DE TRABAJOS */}
                         {(view === 'pending' || view === 'completed' || view === 'archived') && (
                             filtered.map(task => (
                                 <div key={task.id} className="bg-white p-6 rounded-[32px] border card-shadow space-y-4 relative">
-                                    {/* Botonera superior derecha */}
                                     <div className="absolute top-6 right-6 flex gap-2">
                                         <button onClick={() => sendClientNotice(task)} className="bg-green-100 p-2 rounded-xl text-green-600 active:bg-green-600 active:text-white" title="Avisar llegada">
                                             <Icon name="message-circle" size={18} />
                                         </button>
-                                        <button onClick={() => openEditor(task)} className="bg-slate-50 p-2 rounded-xl text-slate-400 active:text-blue-600" title="Editar datos">
+                                        <button onClick={() => openEditor(task)} className="bg-slate-50 p-2 rounded-xl text-slate-400 active:text-blue-600" title="Editar">
                                             <Icon name="edit-3" size={18} />
                                         </button>
                                     </div>
@@ -315,20 +335,20 @@
                                         
                                         <div className="pt-2 mt-2 border-t flex justify-between items-end">
                                             <div>
-                                                <p className="text-[9px] font-bold text-slate-400 uppercase">Presupuesto</p>
+                                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Total</p>
                                                 <p className="font-black text-slate-700 text-sm">{task.totalAmount.toFixed(2)}€</p>
                                             </div>
                                             <div className="text-right">
-                                                <p className="text-[9px] font-bold text-slate-400 uppercase">Pagado</p>
+                                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Pagado</p>
                                                 <p className="font-black text-green-600 text-sm">{task.paidAmount.toFixed(2)}€</p>
                                             </div>
                                         </div>
                                     </div>
 
                                     <div className="flex gap-2">
-                                        {view === 'pending' && <button onClick={() => changeStatus(task.id, 'completed')} className="flex-1 bg-green-600 p-4 rounded-2xl text-[10px] font-black text-white shadow-md active:scale-95 transition-transform">FINALIZAR</button>}
-                                        {view === 'completed' && <button onClick={() => changeStatus(task.id, 'archived')} className="flex-1 bg-slate-700 p-4 rounded-2xl text-[10px] font-black text-white">ARCHIVAR</button>}
-                                        {view === 'archived' && <button onClick={() => changeStatus(task.id, 'pending')} className="flex-1 bg-blue-100 text-blue-700 p-4 rounded-2xl text-[10px] font-black">REABRIR</button>}
+                                        {view === 'pending' && <button onClick={() => changeStatus(task.id, 'completed')} className="flex-1 bg-green-600 p-4 rounded-2xl text-[10px] font-black text-white shadow-md active:scale-95 transition-transform uppercase">Finalizar</button>}
+                                        {view === 'completed' && <button onClick={() => changeStatus(task.id, 'archived')} className="flex-1 bg-slate-700 p-4 rounded-2xl text-[10px] font-black text-white uppercase">Archivar</button>}
+                                        {view === 'archived' && <button onClick={() => changeStatus(task.id, 'pending')} className="flex-1 bg-blue-100 text-blue-700 p-4 rounded-2xl text-[10px] font-black uppercase">Reabrir</button>}
                                         <button onClick={() => deleteTask(task.id)} className="bg-red-50 text-red-500 p-4 rounded-2xl active:bg-red-500 active:text-white transition-colors">
                                             <Icon name="trash-2" size={18} />
                                         </button>
@@ -336,9 +356,15 @@
                                 </div>
                             ))
                         )}
+                        {filtered.length === 0 && (view === 'pending' || view === 'completed' || view === 'archived') && (
+                            <div className="text-center py-20 opacity-20 flex flex-col items-center gap-3">
+                                <Icon name="inbox" size={48} />
+                                <p className="font-black uppercase tracking-widest text-xs">Sin trabajos aquí</p>
+                            </div>
+                        )}
                     </main>
 
-                    {/* MODAL TRABAJO */}
+                    {/* MODAL FORMULARIO TRABAJO */}
                     {showForm && (
                         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-end justify-center p-4">
                             <div className="bg-white w-full max-w-md rounded-t-[40px] p-8 modal-animate max-h-[95vh] overflow-y-auto no-scrollbar shadow-2xl">
@@ -348,7 +374,7 @@
                                 </div>
                                 <form onSubmit={handleSubmit} className="space-y-4">
                                     <div className="space-y-1">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Nombre Cliente</label>
+                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Cliente</label>
                                         <input required className="w-full bg-slate-50 p-4 rounded-2xl outline-none" value={formData.clientName} onChange={e => setFormData({...formData, clientName: e.target.value})} />
                                     </div>
                                     <div className="space-y-1">
@@ -360,14 +386,14 @@
                                         <input required className="w-full bg-slate-50 p-4 rounded-2xl outline-none" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} />
                                     </div>
                                     <div className="space-y-1">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Tipo de Trabajo</label>
+                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Trabajo</label>
                                         <input required className="w-full bg-slate-50 p-4 rounded-2xl font-bold" value={formData.jobType} onChange={e => setFormData({...formData, jobType: e.target.value})} />
                                     </div>
                                     <textarea placeholder="Notas adicionales..." className="w-full bg-slate-50 p-4 rounded-2xl outline-none h-24 resize-none text-sm" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} />
                                     
                                     <div className="grid grid-cols-2 gap-3 bg-blue-50 p-3 rounded-[24px]">
                                         <div>
-                                            <label className="text-[9px] font-black text-blue-400 ml-2 uppercase">Total €</label>
+                                            <label className="text-[9px] font-black text-blue-400 ml-2 uppercase">Presupuesto €</label>
                                             <input type="number" step="any" className="w-full bg-white p-4 rounded-xl font-black" value={formData.totalAmount} onChange={e => setFormData({...formData, totalAmount: e.target.value})} />
                                         </div>
                                         <div>
@@ -377,7 +403,7 @@
                                     </div>
                                     
                                     <button type="submit" className="w-full bg-blue-700 text-white p-5 rounded-[24px] font-black text-lg mt-4 shadow-xl active:scale-95 transition-transform uppercase tracking-tighter">
-                                        {editingTaskId ? 'Actualizar Trabajo' : 'Guardar Nuevo'}
+                                        {editingTaskId ? 'Actualizar' : 'Guardar'}
                                     </button>
                                 </form>
                             </div>
@@ -390,12 +416,12 @@
                             <div className="bg-white w-full max-w-sm rounded-[40px] p-8 shadow-2xl modal-animate text-center">
                                 <h2 className="text-xl font-black text-red-600 mb-6 uppercase">Anotar Gasto</h2>
                                 <form onSubmit={handleExpenseSubmit} className="space-y-4 text-left">
-                                    <input required placeholder="Gasolina, Tornillos, etc..." className="w-full bg-slate-50 p-4 rounded-2xl outline-none" value={expenseData.concept} onChange={e => setExpenseData({...expenseData, concept: e.target.value})} />
+                                    <input required placeholder="Concepto..." className="w-full bg-slate-50 p-4 rounded-2xl outline-none" value={expenseData.concept} onChange={e => setExpenseData({...expenseData, concept: e.target.value})} />
                                     <input required type="number" step="any" placeholder="Importe €" className="w-full bg-slate-50 p-4 rounded-2xl font-black text-red-500" value={expenseData.amount} onChange={e => setExpenseData({...expenseData, amount: e.target.value})} />
                                     <input required type="date" className="w-full bg-slate-50 p-4 rounded-2xl font-bold" value={expenseData.date} onChange={e => setExpenseData({...expenseData, date: e.target.value})} />
                                     <div className="flex gap-2 pt-2">
                                         <button type="button" onClick={() => setShowExpenseForm(false)} className="flex-1 p-4 font-bold text-slate-400">CERRAR</button>
-                                        <button type="submit" className="flex-[2] bg-red-600 text-white p-5 rounded-[24px] font-black shadow-lg">GUARDAR GASTO</button>
+                                        <button type="submit" className="flex-[2] bg-red-600 text-white p-5 rounded-[24px] font-black shadow-lg uppercase">Guardar Gasto</button>
                                     </div>
                                 </form>
                             </div>
