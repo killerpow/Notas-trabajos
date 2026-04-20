@@ -5,7 +5,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Gestor de Trabajos PRO</title>
-    <!-- Librerías estables -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -25,19 +24,15 @@
             from { transform: translateY(100%); }
             to { transform: translateY(0); }
         }
-        .gradient-border {
+        .gradient-restore {
             position: relative;
             background: #fff;
-            border-radius: 32px;
+            border-radius: 24px;
+            border: 2px solid #e2e8f0;
         }
-        .gradient-border::before {
-            content: "";
-            position: absolute;
-            inset: -2px;
-            z-index: -1;
-            background: linear-gradient(to bottom right, #3b82f6, #8b5cf6);
-            border-radius: 34px;
-            opacity: 0.3;
+        .gradient-restore:focus-within {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
         }
     </style>
 </head>
@@ -49,9 +44,7 @@
 
         const Icon = ({ name, size = 20, className = "" }) => {
             useEffect(() => {
-                if (window.lucide) {
-                    window.lucide.createIcons();
-                }
+                if (window.lucide) window.lucide.createIcons();
             }, [name, size]);
             return <i data-lucide={name} className={className} style={{ width: size, height: size }}></i>;
         };
@@ -62,7 +55,8 @@
             const [view, setView] = useState('pending');
             const [showForm, setShowForm] = useState(false);
             const [showExpenseForm, setShowExpenseForm] = useState(false);
-            const [editingFinance, setEditingFinance] = useState(null);
+            const [editingTaskId, setEditingTaskId] = useState(null);
+            const [editingFinanceId, setEditingFinanceId] = useState(null);
             const [importText, setImportText] = useState('');
             const fileInputRef = useRef(null);
 
@@ -76,24 +70,25 @@
 
             const [financeEditData, setFinanceEditData] = useState({ totalAmount: '', paidAmount: '' });
 
+            // Persistencia
             useEffect(() => {
                 try {
-                    const savedTasks = localStorage.getItem('call_tasks_v6');
-                    const savedExpenses = localStorage.getItem('call_expenses_v6');
+                    const savedTasks = localStorage.getItem('call_tasks_v7');
+                    const savedExpenses = localStorage.getItem('call_expenses_v7');
                     if (savedTasks) setTasks(JSON.parse(savedTasks));
                     if (savedExpenses) setExpenses(JSON.parse(savedExpenses));
                 } catch (e) { console.error("Error cargando datos", e); }
             }, []);
 
             useEffect(() => {
-                localStorage.setItem('call_tasks_v6', JSON.stringify(tasks));
-                localStorage.setItem('call_expenses_v6', JSON.stringify(expenses));
+                localStorage.setItem('call_tasks_v7', JSON.stringify(tasks));
+                localStorage.setItem('call_expenses_v7', JSON.stringify(expenses));
                 if (window.lucide) window.lucide.createIcons();
             }, [tasks, expenses, view]);
 
+            // Copias de Seguridad
             const exportToJSON = () => {
-                const fullData = { tasks, expenses };
-                const dataStr = JSON.stringify(fullData, null, 2);
+                const dataStr = JSON.stringify({ tasks, expenses }, null, 2);
                 const blob = new Blob([dataStr], { type: "application/json" });
                 const url = URL.createObjectURL(blob);
                 const link = document.createElement('a');
@@ -103,15 +98,8 @@
             };
 
             const sendBackupWhatsApp = () => {
-                const fullData = { tasks, expenses };
-                const msg = "*BACKUP GESTOR PRO*\n\n" + JSON.stringify(fullData);
+                const msg = "*BACKUP GESTOR PRO*\n\n" + JSON.stringify({ tasks, expenses });
                 window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
-            };
-
-            const sendClientNotice = (task) => {
-                const cleanPhone = task.phone.replace(/\D/g, '');
-                const message = "Hola. Te escribo para avisarte de que vamos a acercarnos para hacer el trabajo que tenemos pendiente. Un saludo";
-                window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
             };
 
             const processImportedData = (dataString) => {
@@ -121,79 +109,87 @@
                         cleanString = cleanString.split("*BACKUP GESTOR PRO*")[1].trim();
                     }
                     const parsed = JSON.parse(cleanString);
-                    if (confirm("¿Restaurar todos los datos? Se borrará lo que tengas ahora.")) {
+                    if (confirm("¿Restaurar todos los datos? Se borrará lo actual.")) {
                         if (parsed.tasks) setTasks(parsed.tasks);
                         if (parsed.expenses) setExpenses(parsed.expenses);
                         setImportText('');
                         alert("Datos restaurados correctamente.");
                     }
-                } catch (err) { 
-                    alert("Error: El texto pegado no es válido."); 
-                }
+                } catch (err) { alert("Error: El texto no es válido."); }
             };
 
             const handleFileUpload = (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
                 const reader = new FileReader();
-                reader.onload = (ev) => {
-                    processImportedData(ev.target.result);
-                    e.target.value = '';
-                };
+                reader.onload = (ev) => processImportedData(ev.target.result);
                 reader.readAsText(file);
             };
 
+            // Acciones de Trabajos
             const handleSubmit = (e) => {
                 e.preventDefault();
-                const newTask = {
-                    ...formData,
-                    id: Date.now(),
-                    status: 'pending',
-                    createdAt: new Date().toLocaleDateString(),
-                    totalAmount: parseFloat(formData.totalAmount) || 0,
-                    paidAmount: parseFloat(formData.paidAmount) || 0
-                };
-                setTasks([newTask, ...tasks]);
+                if (editingTaskId) {
+                    setTasks(tasks.map(t => t.id === editingTaskId ? {
+                        ...t,
+                        ...formData,
+                        totalAmount: parseFloat(formData.totalAmount) || 0,
+                        paidAmount: parseFloat(formData.paidAmount) || 0
+                    } : t));
+                } else {
+                    const newTask = {
+                        ...formData,
+                        id: Date.now(),
+                        status: 'pending',
+                        createdAt: new Date().toLocaleDateString(),
+                        totalAmount: parseFloat(formData.totalAmount) || 0,
+                        paidAmount: parseFloat(formData.paidAmount) || 0
+                    };
+                    setTasks([newTask, ...tasks]);
+                }
                 setFormData({ clientName: '', phone: '', address: '', jobType: '', notes: '', totalAmount: '', paidAmount: '' });
+                setEditingTaskId(null);
                 setShowForm(false);
+            };
+
+            const openEditor = (task) => {
+                setFormData({
+                    clientName: task.clientName, phone: task.phone, address: task.address,
+                    jobType: task.jobType, notes: task.notes || '',
+                    totalAmount: task.totalAmount, paidAmount: task.paidAmount
+                });
+                setEditingTaskId(task.id);
+                setShowForm(true);
             };
 
             const handleExpenseSubmit = (e) => {
                 e.preventDefault();
-                const newExpense = {
-                    ...expenseData,
-                    id: Date.now(),
-                    amount: parseFloat(expenseData.amount) || 0
-                };
+                const newExpense = { ...expenseData, id: Date.now(), amount: parseFloat(expenseData.amount) || 0 };
                 setExpenses([newExpense, ...expenses]);
                 setExpenseData({ concept: '', amount: '', date: new Date().toISOString().split('T')[0] });
                 setShowExpenseForm(false);
             };
 
-            const changeStatus = (id, newStatus) => {
-                setTasks(tasks.map(t => t.id === id ? {...t, status: newStatus} : t));
-            };
+            const changeStatus = (id, newStatus) => setTasks(tasks.map(t => t.id === id ? {...t, status: newStatus} : t));
+            const deleteTask = (id) => { if (confirm('¿Eliminar?')) setTasks(tasks.filter(t => t.id !== id)); };
 
-            const deleteTask = (id) => {
-                if (confirm('¿Eliminar trabajo?')) setTasks(tasks.filter(t => t.id !== id));
-            };
-
-            const totalIngresos = tasks.filter(t => t.status !== 'pending').reduce((acc, t) => acc + (parseFloat(t.paidAmount) || 0), 0);
+            // Cálculos
+            const totalIngresos = tasks.reduce((acc, t) => acc + (parseFloat(t.paidAmount) || 0), 0);
             const totalGastos = expenses.reduce((acc, e) => acc + (parseFloat(e.amount) || 0), 0);
             const filtered = tasks.filter(t => ['pending', 'completed', 'archived'].includes(view) ? t.status === view : true);
 
             return (
-                <div className="min-h-screen bg-slate-50 flex flex-col pb-10">
+                <div className="min-h-screen bg-slate-50 flex flex-col pb-20">
                     <header className="bg-blue-700 text-white p-5 sticky top-0 z-30 shadow-lg">
                         <div className="max-w-xl mx-auto flex justify-between items-center">
-                            <h1 className="font-black text-xl flex items-center gap-2">
+                            <h1 className="font-black text-xl flex items-center gap-2 uppercase tracking-tight">
                                 <Icon name="hammer" /> GESTOR PRO
                             </h1>
                             <div className="flex gap-2">
                                 <button onClick={() => setShowExpenseForm(true)} className="bg-red-500/20 border border-red-400/30 p-3 rounded-2xl active:scale-90 transition-transform">
                                     <Icon name="trending-down" size={18} />
                                 </button>
-                                <button onClick={() => setShowForm(true)} className="bg-green-500 p-3 rounded-2xl shadow-md active:scale-90 transition-transform">
+                                <button onClick={() => { setEditingTaskId(null); setFormData({clientName: '', phone: '', address: '', jobType: '', notes: '', totalAmount: '', paidAmount: ''}); setShowForm(true); }} className="bg-green-500 p-3 rounded-2xl shadow-md active:scale-90 transition-transform">
                                     <Icon name="plus" size={24} />
                                 </button>
                             </div>
@@ -222,18 +218,21 @@
                         {view === 'balance' && (
                             <div className="space-y-4 animate-in fade-in">
                                 <div className="grid grid-cols-2 gap-3">
-                                    <div className="bg-white p-5 rounded-[32px] border shadow-sm text-center">
-                                        <p className="text-[10px] font-bold uppercase text-slate-400">Ingresos</p>
-                                        <h2 className="text-2xl font-black text-green-600">{totalIngresos}€</h2>
+                                    <div className="bg-white p-6 rounded-[32px] border shadow-sm text-center">
+                                        <p className="text-[10px] font-bold uppercase text-slate-400 mb-1">Total Ingresos</p>
+                                        <h2 className="text-2xl font-black text-green-600">{totalIngresos.toFixed(2)}€</h2>
                                     </div>
-                                    <div className="bg-white p-5 rounded-[32px] border shadow-sm text-center">
-                                        <p className="text-[10px] font-bold uppercase text-slate-400">Gastos</p>
-                                        <h2 className="text-2xl font-black text-red-500">{totalGastos}€</h2>
+                                    <div className="bg-white p-6 rounded-[32px] border shadow-sm text-center">
+                                        <p className="text-[10px] font-bold uppercase text-slate-400 mb-1">Total Gastos</p>
+                                        <h2 className="text-2xl font-black text-red-500">{totalGastos.toFixed(2)}€</h2>
                                     </div>
                                 </div>
-                                <div className="bg-slate-900 p-8 rounded-[32px] text-white shadow-xl">
-                                    <p className="text-[10px] font-bold uppercase opacity-60 mb-1">Beneficio Neto</p>
-                                    <h2 className="text-5xl font-black">{(totalIngresos - totalGastos).toFixed(2)}€</h2>
+                                <div className="bg-slate-900 p-8 rounded-[40px] text-white shadow-xl relative overflow-hidden">
+                                    <div className="relative z-10">
+                                        <p className="text-[10px] font-bold uppercase opacity-60 mb-1 tracking-widest">Beneficio Neto</p>
+                                        <h2 className="text-5xl font-black">{(totalIngresos - totalGastos).toFixed(2)}€</h2>
+                                    </div>
+                                    <Icon name="activity" size={80} className="absolute -right-4 -bottom-4 text-white/5" />
                                 </div>
                             </div>
                         )}
@@ -241,55 +240,42 @@
                         {view === 'backups' && (
                             <div className="space-y-6 animate-in fade-in">
                                 <div className="bg-white p-6 rounded-[32px] border shadow-sm space-y-4">
-                                    <h3 className="font-black text-xl px-2">Generar Copia</h3>
+                                    <h3 className="font-black text-lg px-2 uppercase">Guardar Datos</h3>
                                     <div className="grid grid-cols-2 gap-3">
-                                        <button onClick={exportToJSON} className="bg-blue-600 text-white p-6 rounded-[24px] flex flex-col items-center gap-2 font-black text-[10px] shadow-md active:scale-95 transition-transform uppercase tracking-tighter">
-                                            <Icon name="file-down" size={24} /> DESCARGAR JSON
+                                        <button onClick={exportToJSON} className="bg-blue-600 text-white p-5 rounded-3xl flex flex-col items-center gap-2 font-black text-[10px] shadow-lg active:scale-95">
+                                            <Icon name="download" /> JSON
                                         </button>
-                                        <button onClick={sendBackupWhatsApp} className="bg-green-600 text-white p-6 rounded-[24px] flex flex-col items-center gap-2 font-black text-[10px] shadow-md active:scale-95 transition-transform uppercase tracking-tighter">
-                                            <Icon name="share-2" size={24} /> ENVIAR WHATSAPP
+                                        <button onClick={sendBackupWhatsApp} className="bg-green-600 text-white p-5 rounded-3xl flex flex-col items-center gap-2 font-black text-[10px] shadow-lg active:scale-95">
+                                            <Icon name="share-2" /> WHATSAPP
                                         </button>
                                     </div>
                                 </div>
 
                                 <div className="bg-white p-6 rounded-[32px] border shadow-sm space-y-5">
-                                    <h3 className="font-black text-xl px-2">Restaurar Datos</h3>
-                                    
-                                    <div onClick={() => fileInputRef.current.click()} className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[24px] p-6 flex flex-col items-center gap-2 cursor-pointer text-center active:bg-blue-50 transition-colors">
-                                        <div className="bg-blue-100 p-3 rounded-full text-blue-600">
-                                            <Icon name="upload" size={20} />
-                                        </div>
-                                        <p className="font-black text-slate-700 text-xs uppercase">Subir Archivo de Copia</p>
+                                    <h3 className="font-black text-lg px-2 uppercase">Restaurar Datos</h3>
+                                    <div onClick={() => fileInputRef.current.click()} className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[24px] p-6 flex flex-col items-center gap-2 cursor-pointer active:bg-blue-50 transition-colors">
+                                        <Icon name="file-up" size={24} className="text-blue-500" />
+                                        <p className="font-bold text-slate-700 text-xs uppercase">Elegir Archivo</p>
                                         <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".json,.txt" />
                                     </div>
 
-                                    <div className="relative pt-4">
-                                        <div className="absolute inset-0 flex items-center" aria-hidden="true">
-                                            <div className="w-full border-t border-slate-100"></div>
-                                        </div>
-                                        <div className="relative flex justify-center">
-                                            <span className="bg-white px-3 text-[10px] font-black text-slate-300 uppercase">O bien pega el texto</span>
-                                        </div>
-                                    </div>
-
-                                    <div className="gradient-border p-5 space-y-3 shadow-inner">
-                                        <div className="flex items-center gap-2 mb-1">
-                                            <Icon name="clipboard-paste" size={16} className="text-blue-500" />
-                                            <p className="text-[10px] font-black uppercase text-slate-500">Caja de Importación</p>
+                                    <div className="gradient-restore p-5 space-y-3">
+                                        <div className="flex items-center gap-2 text-blue-600">
+                                            <Icon name="clipboard-paste" size={16} />
+                                            <p className="text-[10px] font-black uppercase">Pegar Texto de WhatsApp</p>
                                         </div>
                                         <textarea 
-                                            placeholder="Pega aquí el texto del backup de WhatsApp o del archivo..." 
-                                            className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-xs h-32 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all resize-none"
+                                            placeholder="Pega aquí el código de seguridad..." 
+                                            className="w-full bg-slate-50 rounded-xl p-4 text-xs h-32 outline-none resize-none border border-slate-100"
                                             value={importText}
                                             onChange={(e) => setImportText(e.target.value)}
                                         />
                                         <button 
                                             onClick={() => processImportedData(importText)}
                                             disabled={!importText}
-                                            className={`w-full py-5 rounded-[24px] font-black text-xs transition-all flex items-center justify-center gap-2 ${importText ? 'bg-blue-700 text-white shadow-xl active:scale-95' : 'bg-slate-100 text-slate-300'}`}
+                                            className={`w-full py-4 rounded-2xl font-black text-xs shadow-md transition-all ${importText ? 'bg-blue-700 text-white active:scale-95' : 'bg-slate-100 text-slate-300'}`}
                                         >
-                                            <Icon name="refresh-ccw" size={16} />
-                                            CONFIRMAR RESTAURACIÓN
+                                            RESTAURAR AHORA
                                         </button>
                                     </div>
                                 </div>
@@ -298,94 +284,86 @@
 
                         {(view === 'pending' || view === 'completed' || view === 'archived') && (
                             filtered.map(task => (
-                                <div key={task.id} className="bg-white p-6 rounded-[32px] border card-shadow space-y-4">
-                                    <div className="flex justify-between">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600 font-black">{task.clientName.charAt(0)}</div>
-                                            <div>
-                                                <h4 className="font-black text-lg">{task.clientName}</h4>
-                                                <p className="text-blue-600 font-bold text-xs">{task.phone}</p>
-                                            </div>
-                                        </div>
-                                        <div className="flex flex-col items-end gap-1">
-                                            <span className="text-[9px] font-black text-slate-400">{task.createdAt}</span>
-                                            <button 
-                                                onClick={() => sendClientNotice(task)}
-                                                className="bg-green-500 text-white p-2 rounded-lg active:scale-90 transition-transform shadow-sm"
-                                            >
-                                                <Icon name="message-circle" size={16} />
-                                            </button>
+                                <div key={task.id} className="bg-white p-6 rounded-[32px] border card-shadow space-y-4 relative">
+                                    <button onClick={() => openEditor(task)} className="absolute top-6 right-6 bg-slate-50 p-2 rounded-xl text-slate-400 active:text-blue-600">
+                                        <Icon name="edit-3" size={18} />
+                                    </button>
+                                    <div className="flex items-center gap-3 pr-8">
+                                        <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600 font-black">{task.clientName.charAt(0)}</div>
+                                        <div>
+                                            <h4 className="font-black text-lg leading-tight">{task.clientName}</h4>
+                                            <p className="text-blue-600 font-bold text-xs">{task.phone}</p>
                                         </div>
                                     </div>
                                     <div className="bg-slate-50 p-4 rounded-2xl space-y-2 text-xs">
-                                        <p className="font-bold">🛠️ {task.jobType}</p>
-                                        <p className="text-slate-500">📍 {task.address}</p>
-                                        {task.notes && (
-                                            <div className="mt-2 pt-2 border-t border-slate-200">
-                                                <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Notas:</p>
-                                                <p className="text-slate-600 whitespace-pre-wrap">{task.notes}</p>
+                                        <p className="font-bold flex items-center gap-2"><Icon name="hammer" size={14} className="text-slate-400"/> {task.jobType}</p>
+                                        <p className="text-slate-500 flex items-center gap-2"><Icon name="map-pin" size={14} className="text-slate-400"/> {task.address}</p>
+                                        {task.notes && <p className="text-slate-600 pt-2 mt-2 border-t border-slate-200 italic">{task.notes}</p>}
+                                        <div className="pt-2 mt-2 border-t flex justify-between items-end">
+                                            <div>
+                                                <p className="text-[9px] font-bold text-slate-400 uppercase">Presupuesto</p>
+                                                <p className="font-black text-slate-700 text-sm">{task.totalAmount}€</p>
                                             </div>
-                                        )}
-                                        <div className="pt-2 mt-2 border-t flex justify-between font-black">
-                                            <span className="text-slate-400">Total: {task.totalAmount}€</span>
-                                            <span className="text-green-600">Cobrado: {task.paidAmount}€</span>
+                                            <div className="text-right">
+                                                <p className="text-[9px] font-bold text-slate-400 uppercase">Cobrado</p>
+                                                <p className="font-black text-green-600 text-sm">{task.paidAmount}€</p>
+                                            </div>
                                         </div>
                                     </div>
                                     <div className="flex gap-2">
-                                        {view === 'pending' && <button onClick={() => changeStatus(task.id, 'completed')} className="flex-1 bg-green-600 p-4 rounded-2xl text-[10px] font-black text-white">LISTO</button>}
+                                        {view === 'pending' && <button onClick={() => changeStatus(task.id, 'completed')} className="flex-1 bg-green-600 p-4 rounded-2xl text-[10px] font-black text-white shadow-md">FINALIZAR</button>}
                                         {view === 'completed' && <button onClick={() => changeStatus(task.id, 'archived')} className="flex-1 bg-slate-700 p-4 rounded-2xl text-[10px] font-black text-white">ARCHIVAR</button>}
-                                        {view === 'archived' && <button onClick={() => deleteTask(task.id)} className="bg-red-500 text-white p-4 rounded-2xl"><Icon name="trash-2" size={18} /></button>}
-                                        <button onClick={() => { setEditingFinance(task.id); setFinanceEditData({ totalAmount: task.totalAmount, paidAmount: task.paidAmount }); }} className="bg-blue-100 text-blue-600 p-4 rounded-2xl"><Icon name="edit" size={18}/></button>
+                                        <button onClick={() => deleteTask(task.id)} className="bg-red-50 text-red-500 p-4 rounded-2xl active:bg-red-500 active:text-white transition-colors">
+                                            <Icon name="trash-2" size={18} />
+                                        </button>
                                     </div>
                                 </div>
                             ))
                         )}
                     </main>
 
-                    {/* MODALES IGUALES */}
+                    {/* MODALES */}
                     {showForm && (
                         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-end justify-center p-4">
-                            <div className="bg-white w-full max-w-md rounded-t-[40px] p-8 modal-animate max-h-[95vh] overflow-y-auto no-scrollbar shadow-2xl">
-                                <div className="flex justify-between items-center mb-6"><h2 className="text-xl font-black">Nuevo Trabajo</h2><button onClick={() => setShowForm(false)} className="bg-slate-100 p-2 rounded-full"><Icon name="x" /></button></div>
+                            <div className="bg-white w-full max-w-md rounded-t-[40px] p-8 modal-animate max-h-[95vh] overflow-y-auto no-scrollbar">
+                                <div className="flex justify-between items-center mb-6">
+                                    <h2 className="text-xl font-black uppercase tracking-tight">{editingTaskId ? 'Editar Trabajo' : 'Nuevo Trabajo'}</h2>
+                                    <button onClick={() => setShowForm(false)} className="bg-slate-100 p-2 rounded-full"><Icon name="x" /></button>
+                                </div>
                                 <form onSubmit={handleSubmit} className="space-y-4">
                                     <input required placeholder="Cliente" className="w-full bg-slate-50 p-4 rounded-2xl outline-none" value={formData.clientName} onChange={e => setFormData({...formData, clientName: e.target.value})} />
                                     <input required placeholder="Teléfono" className="w-full bg-slate-50 p-4 rounded-2xl outline-none" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
                                     <input required placeholder="Dirección" className="w-full bg-slate-50 p-4 rounded-2xl outline-none" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} />
-                                    <input required placeholder="Tipo de Trabajo" className="w-full bg-slate-50 p-4 rounded-2xl font-bold" value={formData.jobType} onChange={e => setFormData({...formData, jobType: e.target.value})} />
-                                    <textarea placeholder="Notas / Materiales..." className="w-full bg-slate-50 p-4 rounded-2xl outline-none h-32 resize-none text-sm" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} />
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <input type="number" placeholder="Total €" className="bg-slate-50 p-4 rounded-2xl font-black" value={formData.totalAmount} onChange={e => setFormData({...formData, totalAmount: e.target.value})} />
-                                        <input type="number" placeholder="A cuenta €" className="bg-slate-50 p-4 rounded-2xl font-black text-green-600" value={formData.paidAmount} onChange={e => setFormData({...formData, paidAmount: e.target.value})} />
+                                    <input required placeholder="Trabajo a realizar" className="w-full bg-slate-50 p-4 rounded-2xl font-bold" value={formData.jobType} onChange={e => setFormData({...formData, jobType: e.target.value})} />
+                                    <textarea placeholder="Notas extras..." className="w-full bg-slate-50 p-4 rounded-2xl outline-none h-24 resize-none text-sm" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} />
+                                    <div className="grid grid-cols-2 gap-3 bg-blue-50 p-3 rounded-[24px]">
+                                        <div>
+                                            <label className="text-[9px] font-black text-blue-400 ml-2 uppercase">Total €</label>
+                                            <input type="number" step="any" placeholder="0.00" className="w-full bg-white p-4 rounded-xl font-black" value={formData.totalAmount} onChange={e => setFormData({...formData, totalAmount: e.target.value})} />
+                                        </div>
+                                        <div>
+                                            <label className="text-[9px] font-black text-green-400 ml-2 uppercase">Pagado €</label>
+                                            <input type="number" step="any" placeholder="0.00" className="w-full bg-white p-4 rounded-xl font-black text-green-600" value={formData.paidAmount} onChange={e => setFormData({...formData, paidAmount: e.target.value})} />
+                                        </div>
                                     </div>
-                                    <button type="submit" className="w-full bg-blue-700 text-white p-5 rounded-[24px] font-black text-lg mt-4 shadow-xl">GUARDAR</button>
+                                    <button type="submit" className="w-full bg-blue-700 text-white p-5 rounded-[24px] font-black text-lg mt-4 shadow-xl">GUARDAR CAMBIOS</button>
                                 </form>
                             </div>
                         </div>
                     )}
 
                     {showExpenseForm && (
-                        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 text-center">
                             <div className="bg-white w-full max-w-sm rounded-[40px] p-8 shadow-2xl modal-animate">
-                                <div className="flex justify-between items-center mb-6"><h2 className="text-xl font-black text-red-600">Gasto</h2><button onClick={() => setShowExpenseForm(false)} className="bg-slate-100 p-2 rounded-full"><Icon name="x" /></button></div>
+                                <h2 className="text-xl font-black text-red-600 mb-6 uppercase">Anotar Gasto</h2>
                                 <form onSubmit={handleExpenseSubmit} className="space-y-4">
-                                    <input required placeholder="Concepto" className="w-full bg-slate-50 p-4 rounded-2xl outline-none" value={expenseData.concept} onChange={e => setExpenseData({...expenseData, concept: e.target.value})} />
-                                    <input required type="number" placeholder="Importe €" className="w-full bg-slate-50 p-4 rounded-2xl font-black text-red-500" value={expenseData.amount} onChange={e => setExpenseData({...expenseData, amount: e.target.value})} />
+                                    <input required placeholder="Material / Concepto" className="w-full bg-slate-50 p-4 rounded-2xl outline-none" value={expenseData.concept} onChange={e => setExpenseData({...expenseData, concept: e.target.value})} />
+                                    <input required type="number" step="any" placeholder="Importe €" className="w-full bg-slate-50 p-4 rounded-2xl font-black text-red-500" value={expenseData.amount} onChange={e => setExpenseData({...expenseData, amount: e.target.value})} />
                                     <input required type="date" className="w-full bg-slate-50 p-4 rounded-2xl font-bold" value={expenseData.date} onChange={e => setExpenseData({...expenseData, date: e.target.value})} />
-                                    <button type="submit" className="w-full bg-red-600 text-white p-5 rounded-[24px] font-black text-lg mt-4">GUARDAR GASTO</button>
-                                </form>
-                            </div>
-                        </div>
-                    )}
-
-                    {editingFinance && (
-                        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                            <div className="bg-white w-full max-w-sm rounded-[40px] p-8 shadow-2xl">
-                                <h2 className="text-xl font-black mb-6">Dinero</h2>
-                                <form onSubmit={(e) => { e.preventDefault(); setTasks(tasks.map(t => t.id === editingFinance ? {...t, totalAmount: parseFloat(financeEditData.totalAmount), paidAmount: parseFloat(financeEditData.paidAmount)} : t)); setEditingFinance(null); }} className="space-y-4">
-                                    <input type="number" className="w-full bg-slate-50 p-4 rounded-2xl font-black" value={financeEditData.totalAmount} onChange={e => setFinanceEditData({...financeEditData, totalAmount: e.target.value})} placeholder="Total" />
-                                    <input type="number" className="w-full bg-slate-50 p-4 rounded-2xl font-black text-green-600" value={financeEditData.paidAmount} onChange={e => setFinanceEditData({...financeEditData, paidAmount: e.target.value})} placeholder="Cobrado" />
-                                    <button type="submit" className="w-full bg-green-600 text-white p-4 rounded-2xl font-black uppercase text-xs">Actualizar</button>
-                                    <button type="button" onClick={() => setEditingFinance(null)} className="w-full p-4 font-black text-slate-400 uppercase text-xs">Cancelar</button>
+                                    <div className="flex gap-2">
+                                        <button type="button" onClick={() => setShowExpenseForm(false)} className="flex-1 p-4 font-bold text-slate-400">CANCELAR</button>
+                                        <button type="submit" className="flex-[2] bg-red-600 text-white p-5 rounded-[24px] font-black shadow-lg">GUARDAR</button>
+                                    </div>
                                 </form>
                             </div>
                         </div>
