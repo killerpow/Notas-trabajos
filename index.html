@@ -30,10 +30,6 @@
             border-radius: 24px;
             border: 2px solid #e2e8f0;
         }
-        .gradient-restore:focus-within {
-            border-color: #3b82f6;
-            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
-        }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-900">
@@ -67,11 +63,11 @@
                 concept: '', amount: '', date: new Date().toISOString().split('T')[0]
             });
 
-            // Carga inicial
+            // Carga inicial (v11)
             useEffect(() => {
                 try {
-                    const savedTasks = localStorage.getItem('call_tasks_v10');
-                    const savedExpenses = localStorage.getItem('call_expenses_v10');
+                    const savedTasks = localStorage.getItem('call_tasks_v11');
+                    const savedExpenses = localStorage.getItem('call_expenses_v11');
                     if (savedTasks) setTasks(JSON.parse(savedTasks));
                     if (savedExpenses) setExpenses(JSON.parse(savedExpenses));
                 } catch (e) { console.error("Error cargando datos", e); }
@@ -79,8 +75,8 @@
 
             // Guardado automático
             useEffect(() => {
-                localStorage.setItem('call_tasks_v10', JSON.stringify(tasks));
-                localStorage.setItem('call_expenses_v10', JSON.stringify(expenses));
+                localStorage.setItem('call_tasks_v11', JSON.stringify(tasks));
+                localStorage.setItem('call_expenses_v11', JSON.stringify(expenses));
                 if (window.lucide) window.lucide.createIcons();
             }, [tasks, expenses, view]);
 
@@ -91,24 +87,29 @@
                 window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
             };
 
-            // WhatsApp: Enviar Listado de Trabajos (Texto legible)
+            // WhatsApp: Enviar Listado de Trabajos CON NOTAS
             const sendTaskListWhatsApp = () => {
                 if (tasks.length === 0) {
                     alert("No hay trabajos para enviar.");
                     return;
                 }
-                let message = "*LISTADO DE TRABAJOS*\n\n";
+                let message = "*LISTADO DE TRABAJOS DETALLADO*\n\n";
                 tasks.forEach((t, i) => {
-                    message += `${i + 1}. *${t.clientName}* (${t.status.toUpperCase()})\n`;
-                    message += `   📍 ${t.address}\n`;
-                    message += `   🛠️ ${t.jobType}\n`;
-                    message += `   📞 ${t.phone}\n`;
-                    message += `   💰 Total: ${t.totalAmount}€ | Pagado: ${t.paidAmount}€\n\n`;
+                    const statusIcon = t.status === 'completed' ? '✅' : (t.status === 'archived' ? '📁' : '⏳');
+                    message += `${i + 1}. *${t.clientName}* [${statusIcon}]\n`;
+                    message += `   📍 *Dirección:* ${t.address}\n`;
+                    message += `   🛠️ *Trabajo:* ${t.jobType}\n`;
+                    message += `   📞 *Tel:* ${t.phone}\n`;
+                    if (t.notes) {
+                        message += `   📝 *Notas:* ${t.notes}\n`;
+                    }
+                    message += `   💰 *Presupuesto:* ${t.totalAmount}€ | *Pagado:* ${t.paidAmount}€\n`;
+                    message += `------------------------\n\n`;
                 });
                 window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
             };
 
-            // Backup técnico (JSON)
+            // Backups
             const exportToJSON = () => {
                 const dataStr = JSON.stringify({ tasks, expenses }, null, 2);
                 const blob = new Blob([dataStr], { type: "application/json" });
@@ -137,7 +138,7 @@
                         setImportText('');
                         alert("Datos restaurados correctamente.");
                     }
-                } catch (err) { alert("Error: El texto no es un código de backup válido."); }
+                } catch (err) { alert("Error: Código no válido."); }
             };
 
             const handleFileUpload = (e) => {
@@ -148,20 +149,17 @@
                 reader.readAsText(file);
             };
 
-            // CRUD Trabajos
+            // CRUD
             const handleSubmit = (e) => {
                 e.preventDefault();
                 const numTotal = parseFloat(formData.totalAmount) || 0;
                 const numPaid = parseFloat(formData.paidAmount) || 0;
 
                 if (editingTaskId) {
-                    setTasks(tasks.map(t => t.id === editingTaskId ? {
-                        ...t, ...formData, totalAmount: numTotal, paidAmount: numPaid
-                    } : t));
+                    setTasks(tasks.map(t => t.id === editingTaskId ? { ...t, ...formData, totalAmount: numTotal, paidAmount: numPaid } : t));
                 } else {
                     const newTask = {
-                        ...formData, id: Date.now(), status: 'pending', createdAt: new Date().toLocaleDateString(),
-                        totalAmount: numTotal, paidAmount: numPaid
+                        ...formData, id: Date.now(), status: 'pending', createdAt: new Date().toLocaleDateString(), totalAmount: numTotal, paidAmount: numPaid
                     };
                     setTasks([newTask, ...tasks]);
                 }
@@ -189,9 +187,8 @@
             };
 
             const changeStatus = (id, newStatus) => setTasks(tasks.map(t => t.id === id ? {...t, status: newStatus} : t));
-            const deleteTask = (id) => { if (confirm('¿Eliminar definitivamente?')) setTasks(tasks.filter(t => t.id !== id)); };
+            const deleteTask = (id) => { if (confirm('¿Eliminar?')) setTasks(tasks.filter(t => t.id !== id)); };
 
-            // Cálculos
             const totalIngresos = tasks.reduce((acc, t) => acc + (parseFloat(t.paidAmount) || 0), 0);
             const totalGastos = expenses.reduce((acc, e) => acc + (parseFloat(e.amount) || 0), 0);
             const filtered = tasks.filter(t => ['pending', 'completed', 'archived'].includes(view) ? t.status === view : true);
@@ -233,89 +230,70 @@
                     </nav>
 
                     <main className="flex-1 p-4 max-w-xl mx-auto w-full space-y-4">
-                        {/* BALANCE */}
                         {view === 'balance' && (
-                            <div className="space-y-4 animate-in fade-in">
+                            <div className="space-y-4">
                                 <div className="grid grid-cols-2 gap-3">
-                                    <div className="bg-white p-6 rounded-[32px] border shadow-sm text-center">
-                                        <p className="text-[10px] font-bold uppercase text-slate-400 mb-1 tracking-widest">Ingresos</p>
+                                    <div className="bg-white p-6 rounded-[32px] border text-center">
+                                        <p className="text-[10px] font-bold uppercase text-slate-400 mb-1">Ingresos</p>
                                         <h2 className="text-2xl font-black text-green-600">{totalIngresos.toFixed(2)}€</h2>
                                     </div>
-                                    <div className="bg-white p-6 rounded-[32px] border shadow-sm text-center">
-                                        <p className="text-[10px] font-bold uppercase text-slate-400 mb-1 tracking-widest">Gastos</p>
+                                    <div className="bg-white p-6 rounded-[32px] border text-center">
+                                        <p className="text-[10px] font-bold uppercase text-slate-400 mb-1">Gastos</p>
                                         <h2 className="text-2xl font-black text-red-500">{totalGastos.toFixed(2)}€</h2>
                                     </div>
                                 </div>
-                                <div className="bg-slate-900 p-8 rounded-[40px] text-white shadow-xl relative overflow-hidden">
-                                    <div className="relative z-10">
-                                        <p className="text-[10px] font-bold uppercase opacity-60 mb-1 tracking-widest">Beneficio Neto</p>
-                                        <h2 className="text-5xl font-black">{(totalIngresos - totalGastos).toFixed(2)}€</h2>
-                                    </div>
-                                    <Icon name="activity" size={80} className="absolute -right-4 -bottom-4 text-white/5" />
+                                <div className="bg-slate-900 p-8 rounded-[40px] text-white shadow-xl">
+                                    <p className="text-[10px] font-bold uppercase opacity-60 mb-1 tracking-widest">Beneficio Neto</p>
+                                    <h2 className="text-5xl font-black">{(totalIngresos - totalGastos).toFixed(2)}€</h2>
                                 </div>
                             </div>
                         )}
 
-                        {/* COPIAS Y WHATSAPP */}
                         {view === 'backups' && (
                             <div className="space-y-6 animate-in fade-in">
                                 <div className="bg-white p-6 rounded-[32px] border shadow-sm space-y-4">
-                                    <h3 className="font-black text-lg px-2 uppercase">Exportar y Enviar</h3>
-                                    <div className="grid grid-cols-1 gap-3">
-                                        <button onClick={sendTaskListWhatsApp} className="bg-green-600 text-white p-5 rounded-3xl flex items-center justify-center gap-3 font-black text-xs shadow-lg active:scale-95">
-                                            <Icon name="message-square" /> ENVIAR LISTADO TRABAJOS (WhatsApp)
+                                    <h3 className="font-black text-lg px-2 uppercase">Compartir Listado</h3>
+                                    <button onClick={sendTaskListWhatsApp} className="w-full bg-green-600 text-white p-5 rounded-3xl flex items-center justify-center gap-3 font-black text-xs shadow-lg active:scale-95">
+                                        <Icon name="message-square" /> ENVIAR LISTADO + NOTAS (WhatsApp)
+                                    </button>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <button onClick={exportToJSON} className="bg-blue-600 text-white p-5 rounded-3xl flex flex-col items-center gap-2 font-black text-[10px] active:scale-95">
+                                            <Icon name="download" /> DESCARGAR JSON
                                         </button>
-                                        <div className="grid grid-cols-2 gap-3">
-                                            <button onClick={exportToJSON} className="bg-blue-600 text-white p-5 rounded-3xl flex flex-col items-center gap-2 font-black text-[10px] shadow-lg active:scale-95">
-                                                <Icon name="download" /> DESCARGAR JSON
-                                            </button>
-                                            <button onClick={sendBackupWhatsApp} className="bg-slate-800 text-white p-5 rounded-3xl flex flex-col items-center gap-2 font-black text-[10px] shadow-lg active:scale-95">
-                                                <Icon name="shield-check" /> BACKUP CÓDIGO
-                                            </button>
-                                        </div>
+                                        <button onClick={sendBackupWhatsApp} className="bg-slate-800 text-white p-5 rounded-3xl flex flex-col items-center gap-2 font-black text-[10px] active:scale-95">
+                                            <Icon name="shield-check" /> BACKUP CÓDIGO
+                                        </button>
                                     </div>
                                 </div>
 
                                 <div className="bg-white p-6 rounded-[32px] border shadow-sm space-y-5">
-                                    <h3 className="font-black text-lg px-2 uppercase">Restaurar Datos</h3>
-                                    <div onClick={() => fileInputRef.current.click()} className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[24px] p-6 flex flex-col items-center gap-2 cursor-pointer active:bg-blue-50 transition-colors">
+                                    <h3 className="font-black text-lg px-2 uppercase">Restaurar</h3>
+                                    <div onClick={() => fileInputRef.current.click()} className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[24px] p-6 flex flex-col items-center gap-2 cursor-pointer active:bg-blue-50">
                                         <Icon name="file-up" size={24} className="text-blue-500" />
                                         <p className="font-bold text-slate-700 text-xs uppercase">Elegir Archivo</p>
                                         <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".json,.txt" />
                                     </div>
-
                                     <div className="gradient-restore p-5 space-y-3">
-                                        <div className="flex items-center gap-2 text-blue-600">
-                                            <Icon name="clipboard-paste" size={16} />
-                                            <p className="text-[10px] font-black uppercase">Pegar Código de Backup</p>
-                                        </div>
                                         <textarea 
-                                            placeholder="Pega el código aquí..." 
-                                            className="w-full bg-slate-50 rounded-xl p-4 text-xs h-32 outline-none resize-none border border-slate-100"
+                                            placeholder="Pegar código de WhatsApp aquí..." 
+                                            className="w-full bg-slate-50 rounded-xl p-4 text-xs h-24 outline-none border border-slate-100"
                                             value={importText}
                                             onChange={(e) => setImportText(e.target.value)}
                                         />
-                                        <button 
-                                            onClick={() => processImportedData(importText)}
-                                            disabled={!importText}
-                                            className={`w-full py-4 rounded-2xl font-black text-xs shadow-md transition-all ${importText ? 'bg-blue-700 text-white active:scale-95' : 'bg-slate-100 text-slate-300'}`}
-                                        >
-                                            RESTAURAR AHORA
-                                        </button>
+                                        <button onClick={() => processImportedData(importText)} className="w-full py-4 bg-blue-700 text-white rounded-2xl font-black text-xs">RESTAURAR AHORA</button>
                                     </div>
                                 </div>
                             </div>
                         )}
 
-                        {/* LISTAS DE TRABAJOS */}
                         {(view === 'pending' || view === 'completed' || view === 'archived') && (
                             filtered.map(task => (
                                 <div key={task.id} className="bg-white p-6 rounded-[32px] border card-shadow space-y-4 relative">
                                     <div className="absolute top-6 right-6 flex gap-2">
-                                        <button onClick={() => sendClientNotice(task)} className="bg-green-100 p-2 rounded-xl text-green-600 active:bg-green-600 active:text-white" title="Avisar llegada">
+                                        <button onClick={() => sendClientNotice(task)} className="bg-green-100 p-2 rounded-xl text-green-600 active:bg-green-600 active:text-white">
                                             <Icon name="message-circle" size={18} />
                                         </button>
-                                        <button onClick={() => openEditor(task)} className="bg-slate-50 p-2 rounded-xl text-slate-400 active:text-blue-600" title="Editar">
+                                        <button onClick={() => openEditor(task)} className="bg-slate-50 p-2 rounded-xl text-slate-400 active:text-blue-600">
                                             <Icon name="edit-3" size={18} />
                                         </button>
                                     </div>
@@ -329,24 +307,24 @@
                                     </div>
 
                                     <div className="bg-slate-50 p-4 rounded-2xl space-y-2 text-xs">
-                                        <p className="font-bold flex items-center gap-2"><Icon name="hammer" size={14} className="text-slate-400"/> {task.jobType}</p>
+                                        <p className="font-bold flex items-center gap-2 text-slate-700"><Icon name="hammer" size={14} className="text-slate-400"/> {task.jobType}</p>
                                         <p className="text-slate-500 flex items-center gap-2"><Icon name="map-pin" size={14} className="text-slate-400"/> {task.address}</p>
                                         {task.notes && <p className="text-slate-600 pt-2 mt-2 border-t border-slate-200 italic">{task.notes}</p>}
                                         
                                         <div className="pt-2 mt-2 border-t flex justify-between items-end">
                                             <div>
-                                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Total</p>
-                                                <p className="font-black text-slate-700 text-sm">{task.totalAmount.toFixed(2)}€</p>
+                                                <p className="text-[9px] font-bold text-slate-400 uppercase">Total</p>
+                                                <p className="font-black text-slate-700">{task.totalAmount.toFixed(2)}€</p>
                                             </div>
                                             <div className="text-right">
-                                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Pagado</p>
-                                                <p className="font-black text-green-600 text-sm">{task.paidAmount.toFixed(2)}€</p>
+                                                <p className="text-[9px] font-bold text-slate-400 uppercase">Pagado</p>
+                                                <p className="font-black text-green-600">{task.paidAmount.toFixed(2)}€</p>
                                             </div>
                                         </div>
                                     </div>
 
                                     <div className="flex gap-2">
-                                        {view === 'pending' && <button onClick={() => changeStatus(task.id, 'completed')} className="flex-1 bg-green-600 p-4 rounded-2xl text-[10px] font-black text-white shadow-md active:scale-95 transition-transform uppercase">Finalizar</button>}
+                                        {view === 'pending' && <button onClick={() => changeStatus(task.id, 'completed')} className="flex-1 bg-green-600 p-4 rounded-2xl text-[10px] font-black text-white shadow-md active:scale-95 uppercase">Finalizar</button>}
                                         {view === 'completed' && <button onClick={() => changeStatus(task.id, 'archived')} className="flex-1 bg-slate-700 p-4 rounded-2xl text-[10px] font-black text-white uppercase">Archivar</button>}
                                         {view === 'archived' && <button onClick={() => changeStatus(task.id, 'pending')} className="flex-1 bg-blue-100 text-blue-700 p-4 rounded-2xl text-[10px] font-black uppercase">Reabrir</button>}
                                         <button onClick={() => deleteTask(task.id)} className="bg-red-50 text-red-500 p-4 rounded-2xl active:bg-red-500 active:text-white transition-colors">
@@ -356,15 +334,9 @@
                                 </div>
                             ))
                         )}
-                        {filtered.length === 0 && (view === 'pending' || view === 'completed' || view === 'archived') && (
-                            <div className="text-center py-20 opacity-20 flex flex-col items-center gap-3">
-                                <Icon name="inbox" size={48} />
-                                <p className="font-black uppercase tracking-widest text-xs">Sin trabajos aquí</p>
-                            </div>
-                        )}
                     </main>
 
-                    {/* MODAL FORMULARIO TRABAJO */}
+                    {/* MODAL TRABAJO */}
                     {showForm && (
                         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-end justify-center p-4">
                             <div className="bg-white w-full max-w-md rounded-t-[40px] p-8 modal-animate max-h-[95vh] overflow-y-auto no-scrollbar shadow-2xl">
@@ -373,23 +345,11 @@
                                     <button onClick={() => setShowForm(false)} className="bg-slate-100 p-2 rounded-full"><Icon name="x" /></button>
                                 </div>
                                 <form onSubmit={handleSubmit} className="space-y-4">
-                                    <div className="space-y-1">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Cliente</label>
-                                        <input required className="w-full bg-slate-50 p-4 rounded-2xl outline-none" value={formData.clientName} onChange={e => setFormData({...formData, clientName: e.target.value})} />
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Teléfono</label>
-                                        <input required className="w-full bg-slate-50 p-4 rounded-2xl outline-none" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Dirección</label>
-                                        <input required className="w-full bg-slate-50 p-4 rounded-2xl outline-none" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} />
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Trabajo</label>
-                                        <input required className="w-full bg-slate-50 p-4 rounded-2xl font-bold" value={formData.jobType} onChange={e => setFormData({...formData, jobType: e.target.value})} />
-                                    </div>
-                                    <textarea placeholder="Notas adicionales..." className="w-full bg-slate-50 p-4 rounded-2xl outline-none h-24 resize-none text-sm" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} />
+                                    <input required placeholder="Cliente" className="w-full bg-slate-50 p-4 rounded-2xl outline-none" value={formData.clientName} onChange={e => setFormData({...formData, clientName: e.target.value})} />
+                                    <input required placeholder="Teléfono" className="w-full bg-slate-50 p-4 rounded-2xl outline-none" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
+                                    <input required placeholder="Dirección" className="w-full bg-slate-50 p-4 rounded-2xl outline-none" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} />
+                                    <input required placeholder="¿Qué trabajo es?" className="w-full bg-slate-50 p-4 rounded-2xl font-bold" value={formData.jobType} onChange={e => setFormData({...formData, jobType: e.target.value})} />
+                                    <textarea placeholder="Notas adicionales o materiales..." className="w-full bg-slate-50 p-4 rounded-2xl outline-none h-24 resize-none text-sm" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} />
                                     
                                     <div className="grid grid-cols-2 gap-3 bg-blue-50 p-3 rounded-[24px]">
                                         <div>
@@ -402,7 +362,7 @@
                                         </div>
                                     </div>
                                     
-                                    <button type="submit" className="w-full bg-blue-700 text-white p-5 rounded-[24px] font-black text-lg mt-4 shadow-xl active:scale-95 transition-transform uppercase tracking-tighter">
+                                    <button type="submit" className="w-full bg-blue-700 text-white p-5 rounded-[24px] font-black text-lg mt-4 shadow-xl active:scale-95 uppercase tracking-tighter">
                                         {editingTaskId ? 'Actualizar' : 'Guardar'}
                                     </button>
                                 </form>
@@ -416,7 +376,7 @@
                             <div className="bg-white w-full max-w-sm rounded-[40px] p-8 shadow-2xl modal-animate text-center">
                                 <h2 className="text-xl font-black text-red-600 mb-6 uppercase">Anotar Gasto</h2>
                                 <form onSubmit={handleExpenseSubmit} className="space-y-4 text-left">
-                                    <input required placeholder="Concepto..." className="w-full bg-slate-50 p-4 rounded-2xl outline-none" value={expenseData.concept} onChange={e => setExpenseData({...expenseData, concept: e.target.value})} />
+                                    <input required placeholder="Gasolina, Material, etc..." className="w-full bg-slate-50 p-4 rounded-2xl outline-none" value={expenseData.concept} onChange={e => setExpenseData({...expenseData, concept: e.target.value})} />
                                     <input required type="number" step="any" placeholder="Importe €" className="w-full bg-slate-50 p-4 rounded-2xl font-black text-red-500" value={expenseData.amount} onChange={e => setExpenseData({...expenseData, amount: e.target.value})} />
                                     <input required type="date" className="w-full bg-slate-50 p-4 rounded-2xl font-bold" value={expenseData.date} onChange={e => setExpenseData({...expenseData, date: e.target.value})} />
                                     <div className="flex gap-2 pt-2">
