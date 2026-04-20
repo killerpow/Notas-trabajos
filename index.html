@@ -56,7 +56,6 @@
             const [showForm, setShowForm] = useState(false);
             const [showExpenseForm, setShowExpenseForm] = useState(false);
             const [editingTaskId, setEditingTaskId] = useState(null);
-            const [editingFinanceId, setEditingFinanceId] = useState(null);
             const [importText, setImportText] = useState('');
             const fileInputRef = useRef(null);
 
@@ -68,23 +67,29 @@
                 concept: '', amount: '', date: new Date().toISOString().split('T')[0]
             });
 
-            const [financeEditData, setFinanceEditData] = useState({ totalAmount: '', paidAmount: '' });
-
-            // Persistencia
+            // Persistencia de datos
             useEffect(() => {
                 try {
-                    const savedTasks = localStorage.getItem('call_tasks_v7');
-                    const savedExpenses = localStorage.getItem('call_expenses_v7');
+                    const savedTasks = localStorage.getItem('call_tasks_v9');
+                    const savedExpenses = localStorage.getItem('call_expenses_v9');
                     if (savedTasks) setTasks(JSON.parse(savedTasks));
                     if (savedExpenses) setExpenses(JSON.parse(savedExpenses));
                 } catch (e) { console.error("Error cargando datos", e); }
             }, []);
 
             useEffect(() => {
-                localStorage.setItem('call_tasks_v7', JSON.stringify(tasks));
-                localStorage.setItem('call_expenses_v7', JSON.stringify(expenses));
+                localStorage.setItem('call_tasks_v9', JSON.stringify(tasks));
+                localStorage.setItem('call_expenses_v9', JSON.stringify(expenses));
                 if (window.lucide) window.lucide.createIcons();
             }, [tasks, expenses, view]);
+
+            // Función WhatsApp Cliente con el mensaje personalizado
+            const sendClientNotice = (task) => {
+                const cleanPhone = task.phone.replace(/\D/g, '');
+                // Mensaje solicitado por el usuario
+                const message = "Hola. Vamos a acercarnos en un rato para hacer el trabajo y queríamos saber si estáis en casa y os va bien. Un saludo.";
+                window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
+            };
 
             // Copias de Seguridad
             const exportToJSON = () => {
@@ -126,7 +131,7 @@
                 reader.readAsText(file);
             };
 
-            // Acciones de Trabajos
+            // Gestión de Trabajos
             const handleSubmit = (e) => {
                 e.preventDefault();
                 if (editingTaskId) {
@@ -186,10 +191,10 @@
                                 <Icon name="hammer" /> GESTOR PRO
                             </h1>
                             <div className="flex gap-2">
-                                <button onClick={() => setShowExpenseForm(true)} className="bg-red-500/20 border border-red-400/30 p-3 rounded-2xl active:scale-90 transition-transform">
+                                <button onClick={() => setShowExpenseForm(true)} className="bg-red-500/20 border border-red-400/30 p-3 rounded-2xl active:scale-90 transition-transform" title="Anotar Gasto">
                                     <Icon name="trending-down" size={18} />
                                 </button>
-                                <button onClick={() => { setEditingTaskId(null); setFormData({clientName: '', phone: '', address: '', jobType: '', notes: '', totalAmount: '', paidAmount: ''}); setShowForm(true); }} className="bg-green-500 p-3 rounded-2xl shadow-md active:scale-90 transition-transform">
+                                <button onClick={() => { setEditingTaskId(null); setFormData({clientName: '', phone: '', address: '', jobType: '', notes: '', totalAmount: '', paidAmount: ''}); setShowForm(true); }} className="bg-green-500 p-3 rounded-2xl shadow-md active:scale-90 transition-transform" title="Nuevo Trabajo">
                                     <Icon name="plus" size={24} />
                                 </button>
                             </div>
@@ -243,10 +248,10 @@
                                     <h3 className="font-black text-lg px-2 uppercase">Guardar Datos</h3>
                                     <div className="grid grid-cols-2 gap-3">
                                         <button onClick={exportToJSON} className="bg-blue-600 text-white p-5 rounded-3xl flex flex-col items-center gap-2 font-black text-[10px] shadow-lg active:scale-95">
-                                            <Icon name="download" /> JSON
+                                            <Icon name="download" /> DESCARGAR JSON
                                         </button>
                                         <button onClick={sendBackupWhatsApp} className="bg-green-600 text-white p-5 rounded-3xl flex flex-col items-center gap-2 font-black text-[10px] shadow-lg active:scale-95">
-                                            <Icon name="share-2" /> WHATSAPP
+                                            <Icon name="share-2" /> ENVIAR WHATSAPP
                                         </button>
                                     </div>
                                 </div>
@@ -255,17 +260,17 @@
                                     <h3 className="font-black text-lg px-2 uppercase">Restaurar Datos</h3>
                                     <div onClick={() => fileInputRef.current.click()} className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[24px] p-6 flex flex-col items-center gap-2 cursor-pointer active:bg-blue-50 transition-colors">
                                         <Icon name="file-up" size={24} className="text-blue-500" />
-                                        <p className="font-bold text-slate-700 text-xs uppercase">Elegir Archivo</p>
+                                        <p className="font-bold text-slate-700 text-xs uppercase">Elegir Archivo Backup</p>
                                         <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".json,.txt" />
                                     </div>
 
                                     <div className="gradient-restore p-5 space-y-3">
                                         <div className="flex items-center gap-2 text-blue-600">
                                             <Icon name="clipboard-paste" size={16} />
-                                            <p className="text-[10px] font-black uppercase">Pegar Texto de WhatsApp</p>
+                                            <p className="text-[10px] font-black uppercase">Pegar Texto de Backup</p>
                                         </div>
                                         <textarea 
-                                            placeholder="Pega aquí el código de seguridad..." 
+                                            placeholder="Pega aquí el código que recibiste por WhatsApp..." 
                                             className="w-full bg-slate-50 rounded-xl p-4 text-xs h-32 outline-none resize-none border border-slate-100"
                                             value={importText}
                                             onChange={(e) => setImportText(e.target.value)}
@@ -285,34 +290,45 @@
                         {(view === 'pending' || view === 'completed' || view === 'archived') && (
                             filtered.map(task => (
                                 <div key={task.id} className="bg-white p-6 rounded-[32px] border card-shadow space-y-4 relative">
-                                    <button onClick={() => openEditor(task)} className="absolute top-6 right-6 bg-slate-50 p-2 rounded-xl text-slate-400 active:text-blue-600">
-                                        <Icon name="edit-3" size={18} />
-                                    </button>
-                                    <div className="flex items-center gap-3 pr-8">
-                                        <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600 font-black">{task.clientName.charAt(0)}</div>
+                                    {/* Botonera superior derecha */}
+                                    <div className="absolute top-6 right-6 flex gap-2">
+                                        <button onClick={() => sendClientNotice(task)} className="bg-green-100 p-2 rounded-xl text-green-600 active:bg-green-600 active:text-white" title="Avisar llegada">
+                                            <Icon name="message-circle" size={18} />
+                                        </button>
+                                        <button onClick={() => openEditor(task)} className="bg-slate-50 p-2 rounded-xl text-slate-400 active:text-blue-600" title="Editar datos">
+                                            <Icon name="edit-3" size={18} />
+                                        </button>
+                                    </div>
+
+                                    <div className="flex items-center gap-3 pr-24">
+                                        <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600 font-black uppercase">{task.clientName.charAt(0)}</div>
                                         <div>
                                             <h4 className="font-black text-lg leading-tight">{task.clientName}</h4>
                                             <p className="text-blue-600 font-bold text-xs">{task.phone}</p>
                                         </div>
                                     </div>
+
                                     <div className="bg-slate-50 p-4 rounded-2xl space-y-2 text-xs">
                                         <p className="font-bold flex items-center gap-2"><Icon name="hammer" size={14} className="text-slate-400"/> {task.jobType}</p>
                                         <p className="text-slate-500 flex items-center gap-2"><Icon name="map-pin" size={14} className="text-slate-400"/> {task.address}</p>
                                         {task.notes && <p className="text-slate-600 pt-2 mt-2 border-t border-slate-200 italic">{task.notes}</p>}
+                                        
                                         <div className="pt-2 mt-2 border-t flex justify-between items-end">
                                             <div>
                                                 <p className="text-[9px] font-bold text-slate-400 uppercase">Presupuesto</p>
-                                                <p className="font-black text-slate-700 text-sm">{task.totalAmount}€</p>
+                                                <p className="font-black text-slate-700 text-sm">{task.totalAmount.toFixed(2)}€</p>
                                             </div>
                                             <div className="text-right">
-                                                <p className="text-[9px] font-bold text-slate-400 uppercase">Cobrado</p>
-                                                <p className="font-black text-green-600 text-sm">{task.paidAmount}€</p>
+                                                <p className="text-[9px] font-bold text-slate-400 uppercase">Pagado</p>
+                                                <p className="font-black text-green-600 text-sm">{task.paidAmount.toFixed(2)}€</p>
                                             </div>
                                         </div>
                                     </div>
+
                                     <div className="flex gap-2">
-                                        {view === 'pending' && <button onClick={() => changeStatus(task.id, 'completed')} className="flex-1 bg-green-600 p-4 rounded-2xl text-[10px] font-black text-white shadow-md">FINALIZAR</button>}
+                                        {view === 'pending' && <button onClick={() => changeStatus(task.id, 'completed')} className="flex-1 bg-green-600 p-4 rounded-2xl text-[10px] font-black text-white shadow-md active:scale-95 transition-transform">FINALIZAR</button>}
                                         {view === 'completed' && <button onClick={() => changeStatus(task.id, 'archived')} className="flex-1 bg-slate-700 p-4 rounded-2xl text-[10px] font-black text-white">ARCHIVAR</button>}
+                                        {view === 'archived' && <button onClick={() => changeStatus(task.id, 'pending')} className="flex-1 bg-blue-100 text-blue-700 p-4 rounded-2xl text-[10px] font-black">REABRIR</button>}
                                         <button onClick={() => deleteTask(task.id)} className="bg-red-50 text-red-500 p-4 rounded-2xl active:bg-red-500 active:text-white transition-colors">
                                             <Icon name="trash-2" size={18} />
                                         </button>
@@ -322,47 +338,64 @@
                         )}
                     </main>
 
-                    {/* MODALES */}
+                    {/* MODAL TRABAJO */}
                     {showForm && (
                         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-end justify-center p-4">
-                            <div className="bg-white w-full max-w-md rounded-t-[40px] p-8 modal-animate max-h-[95vh] overflow-y-auto no-scrollbar">
+                            <div className="bg-white w-full max-w-md rounded-t-[40px] p-8 modal-animate max-h-[95vh] overflow-y-auto no-scrollbar shadow-2xl">
                                 <div className="flex justify-between items-center mb-6">
-                                    <h2 className="text-xl font-black uppercase tracking-tight">{editingTaskId ? 'Editar Trabajo' : 'Nuevo Trabajo'}</h2>
+                                    <h2 className="text-xl font-black uppercase tracking-tight">{editingTaskId ? 'Editar Datos' : 'Nuevo Trabajo'}</h2>
                                     <button onClick={() => setShowForm(false)} className="bg-slate-100 p-2 rounded-full"><Icon name="x" /></button>
                                 </div>
                                 <form onSubmit={handleSubmit} className="space-y-4">
-                                    <input required placeholder="Cliente" className="w-full bg-slate-50 p-4 rounded-2xl outline-none" value={formData.clientName} onChange={e => setFormData({...formData, clientName: e.target.value})} />
-                                    <input required placeholder="Teléfono" className="w-full bg-slate-50 p-4 rounded-2xl outline-none" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
-                                    <input required placeholder="Dirección" className="w-full bg-slate-50 p-4 rounded-2xl outline-none" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} />
-                                    <input required placeholder="Trabajo a realizar" className="w-full bg-slate-50 p-4 rounded-2xl font-bold" value={formData.jobType} onChange={e => setFormData({...formData, jobType: e.target.value})} />
-                                    <textarea placeholder="Notas extras..." className="w-full bg-slate-50 p-4 rounded-2xl outline-none h-24 resize-none text-sm" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} />
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Nombre Cliente</label>
+                                        <input required className="w-full bg-slate-50 p-4 rounded-2xl outline-none" value={formData.clientName} onChange={e => setFormData({...formData, clientName: e.target.value})} />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Teléfono</label>
+                                        <input required className="w-full bg-slate-50 p-4 rounded-2xl outline-none" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Dirección</label>
+                                        <input required className="w-full bg-slate-50 p-4 rounded-2xl outline-none" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Tipo de Trabajo</label>
+                                        <input required className="w-full bg-slate-50 p-4 rounded-2xl font-bold" value={formData.jobType} onChange={e => setFormData({...formData, jobType: e.target.value})} />
+                                    </div>
+                                    <textarea placeholder="Notas adicionales..." className="w-full bg-slate-50 p-4 rounded-2xl outline-none h-24 resize-none text-sm" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} />
+                                    
                                     <div className="grid grid-cols-2 gap-3 bg-blue-50 p-3 rounded-[24px]">
                                         <div>
                                             <label className="text-[9px] font-black text-blue-400 ml-2 uppercase">Total €</label>
-                                            <input type="number" step="any" placeholder="0.00" className="w-full bg-white p-4 rounded-xl font-black" value={formData.totalAmount} onChange={e => setFormData({...formData, totalAmount: e.target.value})} />
+                                            <input type="number" step="any" className="w-full bg-white p-4 rounded-xl font-black" value={formData.totalAmount} onChange={e => setFormData({...formData, totalAmount: e.target.value})} />
                                         </div>
                                         <div>
                                             <label className="text-[9px] font-black text-green-400 ml-2 uppercase">Pagado €</label>
-                                            <input type="number" step="any" placeholder="0.00" className="w-full bg-white p-4 rounded-xl font-black text-green-600" value={formData.paidAmount} onChange={e => setFormData({...formData, paidAmount: e.target.value})} />
+                                            <input type="number" step="any" className="w-full bg-white p-4 rounded-xl font-black text-green-600" value={formData.paidAmount} onChange={e => setFormData({...formData, paidAmount: e.target.value})} />
                                         </div>
                                     </div>
-                                    <button type="submit" className="w-full bg-blue-700 text-white p-5 rounded-[24px] font-black text-lg mt-4 shadow-xl">GUARDAR CAMBIOS</button>
+                                    
+                                    <button type="submit" className="w-full bg-blue-700 text-white p-5 rounded-[24px] font-black text-lg mt-4 shadow-xl active:scale-95 transition-transform uppercase tracking-tighter">
+                                        {editingTaskId ? 'Actualizar Trabajo' : 'Guardar Nuevo'}
+                                    </button>
                                 </form>
                             </div>
                         </div>
                     )}
 
+                    {/* MODAL GASTO */}
                     {showExpenseForm && (
-                        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 text-center">
-                            <div className="bg-white w-full max-w-sm rounded-[40px] p-8 shadow-2xl modal-animate">
+                        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                            <div className="bg-white w-full max-w-sm rounded-[40px] p-8 shadow-2xl modal-animate text-center">
                                 <h2 className="text-xl font-black text-red-600 mb-6 uppercase">Anotar Gasto</h2>
-                                <form onSubmit={handleExpenseSubmit} className="space-y-4">
-                                    <input required placeholder="Material / Concepto" className="w-full bg-slate-50 p-4 rounded-2xl outline-none" value={expenseData.concept} onChange={e => setExpenseData({...expenseData, concept: e.target.value})} />
+                                <form onSubmit={handleExpenseSubmit} className="space-y-4 text-left">
+                                    <input required placeholder="Gasolina, Tornillos, etc..." className="w-full bg-slate-50 p-4 rounded-2xl outline-none" value={expenseData.concept} onChange={e => setExpenseData({...expenseData, concept: e.target.value})} />
                                     <input required type="number" step="any" placeholder="Importe €" className="w-full bg-slate-50 p-4 rounded-2xl font-black text-red-500" value={expenseData.amount} onChange={e => setExpenseData({...expenseData, amount: e.target.value})} />
                                     <input required type="date" className="w-full bg-slate-50 p-4 rounded-2xl font-bold" value={expenseData.date} onChange={e => setExpenseData({...expenseData, date: e.target.value})} />
-                                    <div className="flex gap-2">
-                                        <button type="button" onClick={() => setShowExpenseForm(false)} className="flex-1 p-4 font-bold text-slate-400">CANCELAR</button>
-                                        <button type="submit" className="flex-[2] bg-red-600 text-white p-5 rounded-[24px] font-black shadow-lg">GUARDAR</button>
+                                    <div className="flex gap-2 pt-2">
+                                        <button type="button" onClick={() => setShowExpenseForm(false)} className="flex-1 p-4 font-bold text-slate-400">CERRAR</button>
+                                        <button type="submit" className="flex-[2] bg-red-600 text-white p-5 rounded-[24px] font-black shadow-lg">GUARDAR GASTO</button>
                                     </div>
                                 </form>
                             </div>
